@@ -8,6 +8,17 @@ Runs on any **ESP32-S3** with a **round 240×240 GC9A01A screen**, for example t
 ESP32-S3 "robot ball". Built with [ESPHome](https://esphome.io) and Home Assistant.
 No cloud, no app.
 
+## Interface
+
+<p align="center">
+  <img src="docs/images/cat-nap-real.jpg" alt="Smart Home Cat on a desk, napping" width="300">
+  &nbsp;
+  <img src="docs/images/moods.png" alt="All four moods: cat nap, hmm, purring, alarm" width="420">
+</p>
+
+<p align="center"><em>Left: the real cat taking a nap. Right: all four moods. Open
+<a href="docs/moods.html">docs/moods.html</a> to see them animated.</em></p>
+
 ## Moods
 
 | | Mood | When |
@@ -16,8 +27,6 @@ No cloud, no app.
 | 😊 | **Purring**: "^ ^", slow blinks | no alerts, house busy (you decide what busy means) |
 | 🤨 | **Hmm?**: crescent eyes, yellow text | a `check` alert is on |
 | 😳 | **Alarm**: big eyes, fast blinks, red ring, red text | an `alert` alert is on |
-
-See them animated: open [`docs/moods.html`](docs/moods.html) in a browser.
 
 ## How it works
 
@@ -56,6 +65,7 @@ The full step-by-step guide is in [`docs/SETUP.md`](docs/SETUP.md).
 | `homeassistant/cat_alerts.example.yaml` | your alerts + "busy" rule (examples inside) |
 | `docs/SETUP.md` | setup guide |
 | `docs/moods.html` | animated preview of all moods |
+| `docs/images/` | photo and screenshots for this README |
 
 ## Customising
 
