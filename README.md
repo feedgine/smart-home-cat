@@ -1,5 +1,7 @@
 # Smart Home Cat 🐱
 
+[![Validate](https://github.com/feedgine/smart-home-cat/actions/workflows/validate.yaml/badge.svg)](https://github.com/feedgine/smart-home-cat/actions/workflows/validate.yaml)
+
 A little round "cat" that sits on your desk and shows the mood of your Home Assistant with its eyes.
 It purrs when the house is busy, naps when all is quiet, and gets very wide-eyed when something is wrong.
 The name of the problem scrolls along the top.
