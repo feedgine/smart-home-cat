@@ -156,3 +156,4 @@ Test mode shows sample "TEST …" lines and changes nothing else.
 | Cat never reacts | Check `sensor.cat_issues` in Developer tools → States. Test your alert template. |
 | Text shows boxes | The label has letters the font doesn't have. Use plain Latin letters. |
 | Stuck on one mood | Set `input_select.cat_test_mode` back to `auto`. |
+| Red "Home Assistant lost" | The cat has had no connection to HA for 2 min. Check Wi-Fi, check that HA is running, and check the device in Settings → ESPHome. Change the time with `cat_ha_lost_seconds`. |

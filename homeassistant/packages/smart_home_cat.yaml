@@ -23,7 +23,12 @@ input_select:
   cat_test_mode:
     name: Cat test mode
     icon: mdi:cat
-    options: [auto, sleeping, content, checking, alarm]
+    options:
+      - auto
+      - sleeping
+      - content
+      - checking
+      - alarm
 
 script:
   cat_raise_alert:
@@ -38,22 +43,33 @@ script:
         description: "Text for the scrolling line. Say what and where, e.g. 'Garage door open · Garage'"
         required: true
         example: "Backup failed · NAS"
-        selector: {text: {}}
+        selector:
+          text:
       level:
         description: "alert = red, big eyes. check = yellow, crescent eyes."
         default: check
-        selector: {select: {options: [alert, check]}}
+        selector:
+          select:
+            options:
+              - alert
+              - check
       minutes:
         description: "How long the cat fusses (default 30)"
         default: 30
-        selector: {number: {min: 1, max: 1440, unit_of_measurement: min}}
+        selector:
+          number:
+            min: 1
+            max: 1440
+            unit_of_measurement: min
       key:
         description: "Optional id. Raising the same key replaces the old alert."
-        selector: {text: {}}
+        selector:
+          text:
       clear:
         description: "Remove the alert with this key (or title) instead of raising it"
         default: false
-        selector: {boolean: {}}
+        selector:
+          boolean:
     sequence:
       - event: cat_alert
         event_data:
@@ -75,22 +91,39 @@ script:
     icon: mdi:movie-open-play
     mode: restart
     sequence:
-      - &demo_step
-        action: input_select.select_option
-        target: {entity_id: input_select.cat_test_mode}
-        data: {option: content}
-      - delay: {seconds: 4}
-      - <<: *demo_step
-        data: {option: checking}
-      - delay: {seconds: 4}
-      - <<: *demo_step
-        data: {option: alarm}
-      - delay: {seconds: 4}
-      - <<: *demo_step
-        data: {option: sleeping}
-      - delay: {seconds: 2}
-      - <<: *demo_step
-        data: {option: auto}
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: content
+      - delay:
+          seconds: 4
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: checking
+      - delay:
+          seconds: 4
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: alarm
+      - delay:
+          seconds: 4
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: sleeping
+      - delay:
+          seconds: 2
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: auto
 
   cat_demo_all:
     alias: "Cat: demo all moods (80 s)"
@@ -98,22 +131,39 @@ script:
     icon: mdi:movie-open
     mode: restart
     sequence:
-      - &demo_all_step
-        action: input_select.select_option
-        target: {entity_id: input_select.cat_test_mode}
-        data: {option: sleeping}
-      - delay: {seconds: 20}
-      - <<: *demo_all_step
-        data: {option: content}
-      - delay: {seconds: 20}
-      - <<: *demo_all_step
-        data: {option: checking}
-      - delay: {seconds: 20}
-      - <<: *demo_all_step
-        data: {option: alarm}
-      - delay: {seconds: 20}
-      - <<: *demo_all_step
-        data: {option: auto}
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: sleeping
+      - delay:
+          seconds: 20
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: content
+      - delay:
+          seconds: 20
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: checking
+      - delay:
+          seconds: 20
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: alarm
+      - delay:
+          seconds: 20
+      - action: input_select.select_option
+        target:
+          entity_id: input_select.cat_test_mode
+        data:
+          option: auto
 
 template:
   # One-off alerts raised with script.cat_raise_alert, kept until they expire
@@ -138,9 +188,9 @@ template:
             {%- endif -%}
             {%- if trigger.id == 'add' -%}
               {%- set d = trigger.event.data -%}
-              {%- set k = (d.key | default(d.title, true)) | string -%}
+              {%- set k = (d.get('key') or d.get('title')) | string -%}
               {%- set ns.out = ns.out | rejectattr('k', 'eq', k) | list -%}
-              {%- if not (d.clear | default(false) | bool) -%}
+              {%- if not (d.get('clear', false) | bool) -%}
                 {%- set ns.out = ns.out + [{
                     'k': k,
                     's': 'alert' if d.level == 'alert' else 'check',

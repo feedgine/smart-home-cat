@@ -29,6 +29,7 @@ No cloud, no app.
 | 😊 | **Purring**: "^ ^", slow blinks | no alerts, house busy (you decide what busy means) |
 | 🤨 | **Hmm?**: crescent eyes, yellow text | a `check` alert is on |
 | 😳 | **Alarm**: big eyes, fast blinks, red ring, red text | an `alert` alert is on |
+| 📡 | **Alarm** with "Home Assistant lost" | the cat has had no connection to HA for 2 min (it can't see the house) |
 
 ## How it works
 
