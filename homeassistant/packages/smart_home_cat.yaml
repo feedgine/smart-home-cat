@@ -1,0 +1,213 @@
+# Smart Home Cat — Home Assistant core package (you normally don't edit this file)
+#
+# Install:
+#   1. configuration.yaml:   homeassistant:
+#                              packages: !include_dir_named packages
+#   2. Copy this file to /config/packages/smart_home_cat.yaml
+#   3. Copy cat_alerts.example.yaml to /config/packages/cat_alerts.yaml and edit it
+#   4. Developer tools → YAML → check configuration → restart
+#
+# Creates:
+#   sensor.cat_mood      sleeping | content | curious | alert   (read by the ESPHome cat)
+#   sensor.cat_issues    "!problem | !problem | warning"        (scrolling line on the cat)
+#   sensor.cat_event_alerts                                     (one-off alerts from script.cat_raise_alert)
+#   script.cat_raise_alert / cat_clear_alerts / cat_demo_reel / cat_demo_all
+#   input_select.cat_test_mode                                  (force a mood for testing or filming)
+#
+# Mood rules:  any active "alert"  → alert   (big round eyes, red)
+#              any active "check"  → curious (crescent eyes, yellow)
+#              binary_sensor.cat_busy on → content (^ ^)
+#              otherwise           → sleeping (breathing bars)
+
+input_select:
+  cat_test_mode:
+    name: Cat test mode
+    icon: mdi:cat
+    options: [auto, sleeping, content, checking, alarm]
+
+script:
+  cat_raise_alert:
+    alias: "Cat: raise alert"
+    description: >-
+      Make the cat fuss about something for a while. Call it from any automation,
+      e.g. when a door is left open or a backup failed.
+    icon: mdi:cat
+    mode: queued
+    fields:
+      title:
+        description: "Text for the scrolling line. Say what and where, e.g. 'Garage door open · Garage'"
+        required: true
+        example: "Backup failed · NAS"
+        selector: {text: {}}
+      level:
+        description: "alert = red, big eyes. check = yellow, crescent eyes."
+        default: check
+        selector: {select: {options: [alert, check]}}
+      minutes:
+        description: "How long the cat fusses (default 30)"
+        default: 30
+        selector: {number: {min: 1, max: 1440, unit_of_measurement: min}}
+      key:
+        description: "Optional id. Raising the same key replaces the old alert."
+        selector: {text: {}}
+      clear:
+        description: "Remove the alert with this key (or title) instead of raising it"
+        default: false
+        selector: {boolean: {}}
+    sequence:
+      - event: cat_alert
+        event_data:
+          title: "{{ title }}"
+          level: "{{ level | default('check') }}"
+          minutes: "{{ minutes | default(30) }}"
+          key: "{{ key | default(title, true) }}"
+          clear: "{{ clear | default(false) }}"
+
+  cat_clear_alerts:
+    alias: "Cat: clear one-off alerts"
+    icon: mdi:cat
+    sequence:
+      - event: cat_alert_clear_all
+
+  cat_demo_reel:
+    alias: "Cat: demo reel (14 s)"
+    description: "For short videos: content 4 s → checking 4 s → alarm 4 s → sleeping 2 s, then auto."
+    icon: mdi:movie-open-play
+    mode: restart
+    sequence:
+      - &demo_step
+        action: input_select.select_option
+        target: {entity_id: input_select.cat_test_mode}
+        data: {option: content}
+      - delay: {seconds: 4}
+      - <<: *demo_step
+        data: {option: checking}
+      - delay: {seconds: 4}
+      - <<: *demo_step
+        data: {option: alarm}
+      - delay: {seconds: 4}
+      - <<: *demo_step
+        data: {option: sleeping}
+      - delay: {seconds: 2}
+      - <<: *demo_step
+        data: {option: auto}
+
+  cat_demo_all:
+    alias: "Cat: demo all moods (80 s)"
+    description: "sleeping → content → checking → alarm, 20 s each, then auto."
+    icon: mdi:movie-open
+    mode: restart
+    sequence:
+      - &demo_all_step
+        action: input_select.select_option
+        target: {entity_id: input_select.cat_test_mode}
+        data: {option: sleeping}
+      - delay: {seconds: 20}
+      - <<: *demo_all_step
+        data: {option: content}
+      - delay: {seconds: 20}
+      - <<: *demo_all_step
+        data: {option: checking}
+      - delay: {seconds: 20}
+      - <<: *demo_all_step
+        data: {option: alarm}
+      - delay: {seconds: 20}
+      - <<: *demo_all_step
+        data: {option: auto}
+
+template:
+  # One-off alerts raised with script.cat_raise_alert, kept until they expire
+  - trigger:
+      - trigger: event
+        event_type: cat_alert
+        id: add
+      - trigger: event
+        event_type: cat_alert_clear_all
+        id: clear_all
+      - trigger: time_pattern
+        minutes: "/1"
+        id: tick
+    action:
+      - variables:
+          events: >-
+            {%- set now_ts = now().timestamp() -%}
+            {%- set old = (this.attributes.get('events') if this is defined and this.attributes is defined else none) or [] -%}
+            {%- set ns = namespace(out=[]) -%}
+            {%- if trigger.id != 'clear_all' -%}
+              {%- for i in old if (i.until | float(0)) > now_ts -%}{%- set ns.out = ns.out + [i] -%}{%- endfor -%}
+            {%- endif -%}
+            {%- if trigger.id == 'add' -%}
+              {%- set d = trigger.event.data -%}
+              {%- set k = (d.key | default(d.title, true)) | string -%}
+              {%- set ns.out = ns.out | rejectattr('k', 'eq', k) | list -%}
+              {%- if not (d.clear | default(false) | bool) -%}
+                {%- set ns.out = ns.out + [{
+                    'k': k,
+                    's': 'alert' if d.level == 'alert' else 'check',
+                    'm': (d.title | string)[:90],
+                    'until': (now_ts + (d.minutes | default(30) | float(30)) * 60) | round(0)
+                  }] -%}
+              {%- endif -%}
+            {%- endif -%}
+            {{ ns.out }}
+    sensor:
+      - name: Cat event alerts
+        unique_id: cat_event_alerts
+        icon: mdi:cat
+        state: "{{ events | count }}"
+        attributes:
+          events: "{{ events }}"
+
+  - sensor:
+      # Everything the cat is fussing about right now. Problems first, with "!".
+      - name: Cat issues
+        unique_id: cat_issues
+        icon: mdi:cat
+        state: >-
+          {%- set t = states('input_select.cat_test_mode') -%}
+          {%- if t == 'alarm' -%}
+            !TEST · Freezer too warm · Kitchen | Internet down · Router
+          {%- elif t == 'checking' -%}
+            TEST · Low battery · Hall sensor 9% | Window open · Bedroom
+          {%- elif t in ['sleeping', 'content'] -%}
+          {%- else -%}
+            {%- set now_ts = now().timestamp() -%}
+            {%- set ns = namespace(a=[], c=[]) -%}
+            {%- for s in states.binary_sensor
+                  | selectattr('attributes.cat_level', 'defined')
+                  | selectattr('state', 'eq', 'on') -%}
+              {%- set mins = s.attributes.cat_minutes | default(30) | float(30) -%}
+              {%- if mins <= 0 or now_ts - as_timestamp(s.last_changed) < mins * 60 -%}
+                {%- set label = (s.attributes.cat_label | default(s.name, true)) | string -%}
+                {%- if s.attributes.cat_level == 'alert' -%}
+                  {%- set ns.a = ns.a + [label] -%}
+                {%- else -%}
+                  {%- set ns.c = ns.c + [label] -%}
+                {%- endif -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- for e in state_attr('sensor.cat_event_alerts', 'events') or [] -%}
+              {%- if e.s == 'alert' -%}
+                {%- set ns.a = ns.a + [e.m] -%}
+              {%- else -%}
+                {%- set ns.c = ns.c + [e.m] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- set items = (ns.a | map('regex_replace', '^', '!') | list) + ns.c -%}
+            {{ items | join(' | ') | regex_replace('[^ -~°·–]', '') | truncate(250, true, '') }}
+          {%- endif -%}
+
+      - name: Cat mood
+        unique_id: cat_mood
+        icon: mdi:cat
+        state: >-
+          {%- set t = states('input_select.cat_test_mode') -%}
+          {%- set i = states('sensor.cat_issues') -%}
+          {%- if t == 'alarm' -%}alert
+          {%- elif t == 'checking' -%}curious
+          {%- elif t in ['sleeping', 'content'] -%}{{ t }}
+          {%- elif i.startswith('!') -%}alert
+          {%- elif i not in ['', 'unknown', 'unavailable'] -%}curious
+          {%- elif is_state('binary_sensor.cat_busy', 'on') -%}content
+          {%- else -%}sleeping
+          {%- endif -%}

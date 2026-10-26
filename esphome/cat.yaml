@@ -1,0 +1,220 @@
+# Smart Home Cat — ESPHome package
+# A round-screen "cat" that shows the mood of your Home Assistant with its eyes.
+#
+# Use it from your device YAML (see examples/smart-home-cat.yaml):
+#   packages:
+#     cat:
+#       url: https://github.com/feedgine/smart-home-cat
+#       ref: main
+#       files: [esphome/cat.yaml]
+#
+# Override any substitution below in your own device YAML.
+# Needs the HA side: homeassistant/packages/smart_home_cat.yaml (+ your cat_alerts.yaml).
+
+substitutions:
+  # Home Assistant entities (created by the HA package)
+  cat_mood_entity: sensor.cat_mood        # sleeping | content | curious | alert
+  cat_issues_entity: sensor.cat_issues    # "!problem | warning | ..."
+  # Screen: round 240x240 GC9A01A on SPI. Defaults = Spotpear / XiaoZhi ESP32-S3 ball
+  cat_display_model: GC9A01A
+  cat_invert_colors: "true"
+  cat_spi_clk: GPIO14
+  cat_spi_mosi: GPIO17
+  cat_lcd_cs: GPIO13
+  cat_lcd_dc: GPIO10
+  cat_lcd_reset: GPIO18
+  cat_backlight: GPIO3
+  cat_spi_rate: 40MHz
+  # Look
+  cat_eye_color: "5AD7F7"      # main eye colour
+  cat_glow_color: "1E7FA6"     # darker edge ("glow")
+  cat_alarm_eye_color: "E3EEF8"
+  cat_alarm_color: "E53935"    # ring + alarm text
+  cat_check_color: "FFC23D"    # checking text
+  cat_eye_left_x: "74"
+  cat_eye_right_x: "166"
+  cat_eye_y: "122"
+  cat_sleep_brightness: "0.6"  # backlight while napping (0..1)
+  cat_frame_ms: 60ms           # redraw interval
+
+text_sensor:
+  - platform: homeassistant
+    id: mood
+    entity_id: ${cat_mood_entity}
+  - platform: homeassistant
+    id: issues
+    entity_id: ${cat_issues_entity}
+
+spi:
+  clk_pin: ${cat_spi_clk}
+  mosi_pin: ${cat_spi_mosi}
+
+output:
+  - platform: ledc
+    pin: ${cat_backlight}
+    id: cat_backlight_pwm
+
+light:
+  - platform: monochromatic
+    output: cat_backlight_pwm
+    name: "Backlight"
+    id: backlight
+    restore_mode: ALWAYS_ON
+
+# Dim the backlight a little while napping (the eyes also "breathe")
+interval:
+  - interval: 5s
+    then:
+      - lambda: |-
+          float target = (id(mood).state == "sleeping") ? ${cat_sleep_brightness}f : 1.0f;
+          float cur = id(backlight).current_values.get_brightness();
+          if (fabsf(cur - target) > 0.05f) {
+            auto call = id(backlight).turn_on();
+            call.set_brightness(target);
+            call.set_transition_length(2000);
+            call.perform();
+          }
+
+font:
+  - file: "gfonts://Roboto"
+    id: f_small
+    size: 16
+    glyphsets: [GF_Latin_Kernel]
+    glyphs: "°·–"
+
+color:
+  - id: c_eye
+    hex: "${cat_alarm_eye_color}"
+  - id: c_red
+    hex: "${cat_alarm_color}"
+  - id: c_warn
+    hex: "${cat_check_color}"
+  - id: c_cyan
+    hex: "${cat_eye_color}"
+  - id: c_glow
+    hex: "${cat_glow_color}"
+
+display:
+  - platform: ili9xxx
+    id: cat_display
+    model: ${cat_display_model}
+    cs_pin: ${cat_lcd_cs}
+    dc_pin: ${cat_lcd_dc}
+    reset_pin: ${cat_lcd_reset}
+    invert_colors: ${cat_invert_colors}
+    data_rate: ${cat_spi_rate}
+    update_interval: ${cat_frame_ms}
+    lambda: |-
+      // Smart Home Cat eyes (cyan glow style):
+      //   sleeping = closed bars "- -", slowly breathing brightness (no alerts, house not busy)
+      //   curious  = "checking": crescent eyes, yellow ticker on top
+      //   content  = happy "^ ^" eyes, slow blink (no alerts, house busy)
+      //   alert    = big white round eyes, fast blink, red ring, red ticker on top
+      static uint32_t next_blink = 3000, blink_start = 0;
+      static std::string last_mood;
+      const uint32_t now = millis();
+      const std::string m = id(mood).state;
+      if (m != last_mood) { last_mood = m; next_blink = now + 1500; blink_start = 0; }
+
+      // ticker text from "House issues" ("!" = problem, " | " between items)
+      std::string tick;
+      {
+        const std::string s = id(issues).state;
+        if (s != "unknown" && s != "unavailable") {
+          size_t p = 0;
+          while (p < s.size()) {
+            size_t q = s.find(" | ", p);
+            std::string part = s.substr(p, q == std::string::npos ? std::string::npos : q - p);
+            if (!part.empty() && part[0] == '!') part = part.substr(1);
+            if (!part.empty()) { if (!tick.empty()) tick += "   ·   "; tick += part; }
+            if (q == std::string::npos) break;
+            p = q + 3;
+          }
+        }
+      }
+
+      const Color EYE = id(c_eye);
+      const Color BLK = Color::BLACK;
+      const int LX = ${cat_eye_left_x}, RX = ${cat_eye_right_x}, Y = ${cat_eye_y};
+
+      auto pill = [&](int x, int y, int w, int h) {   // rounded bar, centred on x,y
+        int r = h / 2;
+        it.filled_rectangle(x - w / 2 + r, y - r, w - 2 * r, h, EYE);
+        it.filled_circle(x - w / 2 + r, y, r, EYE);
+        it.filled_circle(x + w / 2 - r, y, r, EYE);
+      };
+      // 0..1..0 during a blink; next one after mn..mx ms; blink lasts dur ms
+      auto blink_amt = [&](uint32_t mn, uint32_t mx, uint32_t dur) -> float {
+        if (blink_start == 0 && now >= next_blink) blink_start = now;
+        if (blink_start != 0) {
+          float p = (now - blink_start) / (float) dur;
+          if (p >= 1.0f) { blink_start = 0; next_blink = now + mn + (esp_random() % (mx - mn)); return 0.0f; }
+          return p < 0.5f ? p * 2.0f : (1.0f - p) * 2.0f;
+        }
+        return 0.0f;
+      };
+      // scrolling line at the top of the round screen
+      auto ticker = [&](Color c) {
+        if (tick.empty()) return;
+        int x1, y1, w, h;
+        it.get_text_bounds(0, 0, tick.c_str(), id(f_small), TextAlign::TOP_LEFT, &x1, &y1, &w, &h);
+        const int L = 24, W = 192, T = 46;
+        it.start_clipping(L, T - 2, L + W, T + 22);
+        if (w <= W) {
+          it.print(120, T, id(f_small), c, TextAlign::TOP_CENTER, tick.c_str());
+        } else {
+          int span = w + 60;
+          int off = (int) ((now / 25) % span);   // 40 px per second
+          it.print(L + W - off, T, id(f_small), c, TextAlign::TOP_LEFT, tick.c_str());
+          it.print(L + W - off + span, T, id(f_small), c, TextAlign::TOP_LEFT, tick.c_str());
+        }
+        it.end_clipping();
+      };
+
+      const Color CY = id(c_cyan), GL = id(c_glow);
+      auto bar = [&](int x, int y, int w, int h, Color c) {   // rounded bar in any colour
+        int r = h / 2;
+        it.filled_rectangle(x - w / 2 + r, y - r, w - 2 * r, h, c);
+        it.filled_circle(x - w / 2 + r, y, r, c);
+        it.filled_circle(x + w / 2 - r, y, r, c);
+      };
+      auto seg = [&](float x1, float y1, float x2, float y2, float w, Color c) {  // thick line
+        float dx = x2 - x1, dy = y2 - y1, l = sqrtf(dx * dx + dy * dy);
+        float nx = -dy / l * w / 2, ny = dx / l * w / 2;
+        it.filled_triangle(x1 + nx, y1 + ny, x2 + nx, y2 + ny, x2 - nx, y2 - ny, c);
+        it.filled_triangle(x1 + nx, y1 + ny, x2 - nx, y2 - ny, x1 - nx, y1 - ny, c);
+        it.filled_circle(x1, y1, (int) (w / 2), c);
+        it.filled_circle(x2, y2, (int) (w / 2), c);
+      };
+      auto chevron = [&](int x, int y, float w, Color c) {    // "^"
+        seg(x - 20, y + 9, x, y - 11, w, c);
+        seg(x, y - 11, x + 20, y + 9, w, c);
+      };
+      auto crescent = [&](int x, int y) {                     // "C" moon, open to the upper right
+        it.filled_circle(x, y, 26, GL);
+        it.filled_circle(x, y, 24, CY);
+        it.filled_circle(x + 10, y - 8, 19, BLK);
+      };
+
+      if (m == "sleeping") {
+        // slow breathing: 5 s per breath, 25..100 % of the eye colour
+        float l = 0.25f + 0.75f * (0.5f - 0.5f * cosf(2.0f * M_PI * (now % 5000) / 5000.0f));
+        Color c((uint8_t) (CY.r * l), (uint8_t) (CY.g * l), (uint8_t) (CY.b * l));
+        bar(LX, Y, 48, 9, c);
+        bar(RX, Y, 48, 9, c);
+      } else if (m == "curious") {
+        crescent(LX, Y);
+        crescent(RX, Y);
+        ticker(id(c_warn));
+      } else if (m == "alert") {
+        it.filled_circle(120, 120, 119, id(c_red));   // steady red ring
+        it.filled_circle(120, 120, 114, BLK);
+        float b = blink_amt(1500, 2500, 140);       // fast, short blinks
+        if (b > 0.5f) { pill(LX, Y, 58, 8); pill(RX, Y, 58, 8); }
+        else { it.filled_circle(LX, Y, 29, EYE); it.filled_circle(RX, Y, 29, EYE); }
+        ticker(id(c_red));
+      } else {  // content (also before HA data arrives)
+        float b = blink_amt(4000, 7000, 450);       // slow, lazy blink
+        if (b > 0.5f) { bar(LX, Y, 46, 8, CY); bar(RX, Y, 46, 8, CY); }
+        else { chevron(LX, Y, 12, GL); chevron(RX, Y, 12, GL); chevron(LX, Y, 9, CY); chevron(RX, Y, 9, CY); }
+      }

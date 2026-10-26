@@ -1,0 +1,27 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  esphome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install esphome
+      - name: ESPHome config
+        run: |
+          cp examples/secrets.example.yaml examples/secrets.yaml
+          esphome config examples/smart-home-cat-local.yaml
+
+  yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install yamllint
+      - name: Lint HA files
+        run: yamllint -d "{extends: relaxed, rules: {line-length: disable}}" homeassistant/

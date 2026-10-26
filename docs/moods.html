@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Smart Home Cat</title>
+<style>
+  :root { --bg:#f4f4f6; --fg:#1d1d22; --muted:#6b6b75; --card:#ffffff; --line:#e2e2e8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121216; --fg:#ececf1; --muted:#9a9aa6; --card:#1c1c22; --line:#2c2c35; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; padding:20px 16px 40px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.lead { color:var(--muted); margin:0 0 20px; max-width:760px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; max-width:1100px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+  .ball { width:200px; height:200px; border-radius:50%; background:#000; box-shadow:0 0 0 10px #d9d9de, 0 6px 18px rgba(0,0,0,.25); overflow:hidden; }
+  canvas { width:200px; height:200px; display:block; }
+  .name { font-weight:600; }
+  .when { color:var(--muted); font-size:13px; text-align:center; }
+</style>
+</head>
+<body>
+<h1>Smart Home Cat moods</h1>
+<p class="lead">Meet the cat that never sheds and never sleeps on the keyboard. It watches Home Assistant all day and makes faces about it. It does not fuss about every little thing: only the alerts you list in one config file. Each one gets 30 minutes of attention (you can change that), and its name scrolls along the top so you know exactly whom to blame.</p>
+<div class="grid" id="grid"></div>
+<script>
+const MOODS = [
+  { id:'sleeping', name:'😴 Cat nap', when:'No alerts and the house is not busy. Nothing to guard, so: eyes shut, slow breathing, dreams of warm radiators.' },
+  { id:'curious',  name:'🤨 Hmm, what was that?', when:'One of your "check" alerts is on (low battery, window open, internet down…). One suspicious crescent look per eye, and the evidence scrolls on top in yellow.' },
+  { id:'content',  name:'😊 Purring', when:'No alerts and the house is busy (you decide what that means: heating on, someone home, daytime). Happy "^ ^" face, lazy slow blinks.' },
+  { id:'alert',    name:'😳 WHO KNOCKED THAT OFF THE TABLE?!', when:'One of your "alert" alerts is on (freezer warm, water leak, grid lost…). Huge eyes, frantic blinking, red ring. Go check, human!' },
+];
+const TICK = { curious:'Low battery · Hall sensor 9%   ·   Window open · Bedroom', alert:'Freezer -4° · Kitchen   ·   Internet down · Router' };
+const EYE='#e3eef8', RED='#e53935', WARN='#ffc23d', CY='#5ad7f7', GL='#1e7fa6';
+const grid=document.getElementById('grid');
+const items=MOODS.map(m=>{const card=document.createElement('div');card.className='card';
+  card.innerHTML=`<div class="ball"><canvas width="240" height="240"></canvas></div><div class="name">${m.name}</div><div class="when">${m.when}</div>`;
+  grid.appendChild(card); return {m,ctx:card.querySelector('canvas').getContext('2d'),st:{nextBlink:performance.now()+1500,blinkStart:-1}};});
+const circle=(c,x,y,r,col)=>{c.fillStyle=col;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill();};
+const bar=(c,x,y,w,h,col)=>{c.strokeStyle=col;c.lineWidth=h;c.lineCap='round';c.beginPath();c.moveTo(x-w/2+h/2,y);c.lineTo(x+w/2-h/2,y);c.stroke();};
+const chev=(c,x,y,w,col)=>{c.strokeStyle=col;c.lineWidth=w;c.lineCap='round';c.lineJoin='round';c.beginPath();c.moveTo(x-20,y+9);c.lineTo(x,y-11);c.lineTo(x+20,y+9);c.stroke();};
+function blinkAmt(st,t,a,b,dur){ if(st.blinkStart<0&&t>st.nextBlink)st.blinkStart=t;
+  if(st.blinkStart>=0){const p=(t-st.blinkStart)/dur; if(p>=1){st.blinkStart=-1;st.nextBlink=t+a+Math.random()*(b-a);return 0;} return p<.5?p*2:(1-p)*2;} return 0;}
+function ticker(c,txt,col,t){ c.save(); c.beginPath(); c.rect(24,44,192,24); c.clip(); c.font='600 16px Roboto,Arial'; c.fillStyle=col; c.textAlign='left'; c.textBaseline='top';
+  const w=c.measureText(txt).width, span=w+60, off=(t/25)%span; c.fillText(txt,216-off,46); c.fillText(txt,216-off+span,46); c.restore(); }
+const LX=74,RX=166,Y=122;
+function frame(t){ for(const it of items){ const c=it.ctx, st=it.st, id=it.m.id;
+  c.fillStyle='#000'; c.fillRect(0,0,240,240);
+  if(id==='sleeping'){ const l=.25+.75*(.5-.5*Math.cos(2*Math.PI*(t%5000)/5000)); c.globalAlpha=l; bar(c,LX,Y,48,9,CY); bar(c,RX,Y,48,9,CY); c.globalAlpha=1; }
+  else if(id==='curious'){ for(const x of [LX,RX]){ circle(c,x,Y,26,GL); circle(c,x,Y,24,CY); circle(c,x+10,Y-8,19,'#000'); } ticker(c,TICK.curious,WARN,t); }
+  else if(id==='content'){ const b=blinkAmt(st,t,4000,7000,450);
+    if(b>.5){bar(c,LX,Y,46,8,CY);bar(c,RX,Y,46,8,CY);} else {chev(c,LX,Y,12,GL);chev(c,RX,Y,12,GL);chev(c,LX,Y,9,CY);chev(c,RX,Y,9,CY);} }
+  else if(id==='alert'){ c.strokeStyle=RED; c.lineWidth=5; c.beginPath(); c.arc(120,120,116.5,0,Math.PI*2); c.stroke();
+    const b=blinkAmt(st,t,1500,2500,140); if(b>.5){bar(c,LX,Y,58,8,EYE);bar(c,RX,Y,58,8,EYE);} else {circle(c,LX,Y,29,EYE);circle(c,RX,Y,29,EYE);} ticker(c,TICK.alert,RED,t); }
+ } requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

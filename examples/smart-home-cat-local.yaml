@@ -1,0 +1,49 @@
+# Same as smart-home-cat.yaml but uses the package from this repo folder
+# (for development and CI validation).
+substitutions:
+  name: smart-home-cat
+  friendly_name: Smart Home Cat
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:            # N16R8 boards: octal. Remove or set "quad" for other boards.
+  mode: octal
+  speed: 80MHz
+
+logger:
+
+api:
+  encryption:
+    key: !secret cat_api_key
+
+ota:
+  - platform: esphome
+    password: !secret cat_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Smart Home Cat Fallback"
+    password: !secret cat_ap_password
+
+captive_portal:
+
+# Optional: also act as a Bluetooth proxy for BLE sensors nearby
+# esp32_ble_tracker:
+#   scan_parameters:
+#     active: false
+# bluetooth_proxy:
+#   active: false
+
+packages:
+  cat: !include ../esphome/cat.yaml

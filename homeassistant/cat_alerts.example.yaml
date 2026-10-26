@@ -1,0 +1,102 @@
+# Smart Home Cat — YOUR alert configuration
+# Copy to /config/packages/cat_alerts.yaml and edit. This is the only file you need to change.
+#
+# Every alert is a normal HA template binary_sensor with a few cat_* attributes:
+#
+#   state:        when is it a problem? (any HA template, true = on)
+#   delay_on:     how long it must be true first (stops flicker)        optional
+#   cat_level:    alert  → red ring, big round eyes, fast blinking
+#                 check  → yellow text, crescent "hmm?" eyes
+#   cat_label:    text for the scrolling line. Say WHAT and WHERE, so you can find it in HA.
+#                 Can be a template.                                     optional (default: name)
+#   cat_minutes:  how long the cat fusses after it turns on. Default 30.
+#                 0 = as long as the problem lasts.                      optional
+#
+# The cat finds every binary_sensor that has cat_level, so you can also add
+# cat_* attributes to template sensors you already have.
+# For one-off events (backup failed, doorbell, ...) call script.cat_raise_alert
+# from an automation instead.
+#
+# Replace the example entity ids with yours, and delete what you don't need.
+
+template:
+  - binary_sensor:
+      # ── When is the house "busy"? ───────────────────────────────────────────
+      # On  → the cat is awake and purring (^ ^).  Off → it naps (breathing bars).
+      # Examples: heat pump running, someone home, daytime.
+      - name: Cat busy
+        unique_id: cat_busy
+        state: "{{ now().hour >= 7 and now().hour < 23 }}"
+        # state: "{{ is_state('climate.heat_pump', 'heat') and state_attr('climate.heat_pump', 'hvac_action') == 'heating' }}"
+
+      # ── Problems (alert) ────────────────────────────────────────────────────
+      - name: "Cat alert · Freezer too warm"
+        unique_id: cat_alert_freezer_warm
+        state: "{{ states('sensor.freezer_temperature') | float(-99) > -12 }}"
+        delay_on: "00:10:00"
+        attributes:
+          cat_level: alert
+          cat_label: "Freezer {{ states('sensor.freezer_temperature') }}° · Kitchen"
+
+      - name: "Cat alert · Water leak"
+        unique_id: cat_alert_water_leak
+        state: "{{ is_state('binary_sensor.bathroom_leak', 'on') }}"
+        attributes:
+          cat_level: alert
+          cat_label: "Water leak · Bathroom"
+          cat_minutes: 0          # keep fussing until it is dry
+
+      - name: "Cat alert · Zigbee down"
+        unique_id: cat_alert_zigbee_down
+        state: "{{ is_state('binary_sensor.zigbee2mqtt_bridge_connection_state', 'off') }}"
+        delay_on: "00:05:00"
+        attributes:
+          cat_level: alert
+          cat_label: "Zigbee2MQTT bridge offline"
+
+      - name: "Cat alert · Grid lost"
+        unique_id: cat_alert_grid_lost
+        state: "{{ is_state('binary_sensor.grid_power', 'off') }}"
+        attributes:
+          cat_level: alert
+          cat_label: "Electricity grid lost · running on battery"
+
+      # ── Things to check (check) ─────────────────────────────────────────────
+      - name: "Cat check · Low batteries"
+        unique_id: cat_check_low_batteries
+        state: >-
+          {{ states.sensor
+             | selectattr('attributes.device_class', 'defined')
+             | selectattr('attributes.device_class', 'eq', 'battery')
+             | map(attribute='state') | map('float', 100)
+             | select('lt', 15) | list | count > 0 }}
+        attributes:
+          cat_level: check
+          cat_minutes: 120
+          cat_label: >-
+            {%- set ns = namespace(n=[]) -%}
+            {%- for s in states.sensor
+                  | selectattr('attributes.device_class', 'defined')
+                  | selectattr('attributes.device_class', 'eq', 'battery')
+                  if s.state | float(100) < 15 -%}
+              {%- set ns.n = ns.n + [s.name ~ ' ' ~ s.state ~ '%'] -%}
+            {%- endfor -%}
+            Low battery · {{ ns.n | join(', ') }}
+
+      - name: "Cat check · Internet down"
+        unique_id: cat_check_internet_down
+        state: "{{ is_state('binary_sensor.internet_ping', 'off') }}"
+        delay_on: "00:03:00"
+        attributes:
+          cat_level: check
+          cat_label: "Internet down · Router"
+
+      - name: "Cat check · Window open while heating"
+        unique_id: cat_check_window_open
+        state: >-
+          {{ is_state('binary_sensor.bedroom_window', 'on')
+             and is_state('binary_sensor.cat_busy', 'on') }}
+        delay_on: "00:15:00"
+        attributes:
+          cat_level: check
+          cat_label: "Window open · Bedroom"
